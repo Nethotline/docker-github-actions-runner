@@ -1,0 +1,149 @@
+name: Build runner image (base + latest)
+
+# Lean replacement for the disabled base.yml / deploy.yml matrix workflows.
+# One job, one OS (ubuntu noble), one arch (amd64):
+#   1. build the base image fresh (from Dockerfile.base)
+#   2. build the final image on top of that *just-built* base (from Dockerfile)
+#   3. goss-test both
+#   4. push base + final to GHCR only after tests pass
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+    paths:
+      - Dockerfile
+      - Dockerfile.base
+      - build/**
+      - "*.sh"
+      - goss*
+      - .github/workflows/build.yml
+  pull_request:
+    paths:
+      - Dockerfile
+      - Dockerfile.base
+      - build/**
+      - "*.sh"
+      - goss*
+      - .github/workflows/build.yml
+  schedule:
+    # Weekly: pick up new actions/runner releases and ubuntu security updates.
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  BASE_TAG: github-runner-base:latest
+  FINAL_TAG: github-runner:latest
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Copy Repo Files
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Resolve GHCR image name (lowercase)
+        env:
+          REPO: ${{ github.repository }}
+        run: echo "IMAGE=ghcr.io/$(echo "$REPO" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
+      - name: Resolve latest actions/runner version
+        run: |
+          VER=$(curl -fsSL -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/actions/runner/releases/latest \
+            | jq -r '.tag_name' | sed 's/^v//')
+          if [ -z "${VER}" ] || [ "${VER}" = "null" ]; then
+            echo "Could not resolve latest release; falling back to the Dockerfile ARG default."
+            VER=$(grep -oP 'ARG GH_RUNNER_VERSION="\K[^"]+' Dockerfile)
+          fi
+          echo "GH_RUNNER_VERSION=${VER}" >> "$GITHUB_ENV"
+          echo "Building actions/runner ${VER}"
+
+      - name: Install Goss and dgoss
+        run: |
+          curl -fsSL https://goss.rocks/install | sh
+          export PATH=$PATH:/usr/local/bin
+
+      # 1. Build the base image fresh. --pull always refreshes ubuntu:noble.
+      - name: Build base image
+        run: DOCKER_BUILDKIT=1 docker build --pull -f Dockerfile.base -t "${BASE_TAG}" .
+
+      - name: Test base image
+        run: |
+          printf 'os: ubuntu\noscodename: noble\narch: x86_64\n' > goss_vars.yaml
+          GOSS_VARS=goss_vars.yaml GOSS_FILE=goss_base.yaml GOSS_SLEEP=1 \
+            dgoss run --entrypoint /usr/bin/sleep -e RUNNER_NAME=test -e DEBUG_ONLY=true "${BASE_TAG}" 10
+
+      # 2. Build the final image. Dockerfile's `FROM github-runner-base:latest`
+      #    resolves to the image built above, so the final is provably built on
+      #    this run's base, not a stale registry copy.
+      - name: Build final image (on freshly built base)
+        run: |
+          DOCKER_BUILDKIT=1 docker build \
+            -f Dockerfile \
+            --build-arg GH_RUNNER_VERSION="${GH_RUNNER_VERSION}" \
+            -t "${FINAL_TAG}" .
+
+      - name: Test final image
+        run: |
+          # deregistration guard for reusable runners (expects exit 1)
+          GOSS_VARS=goss_vars.yaml GOSS_FILE=goss_reusage_fail.yaml GOSS_SLEEP=1 dgoss run --entrypoint /usr/bin/sleep \
+            -e DEBUG_ONLY=true \
+            -e ACCESS_TOKEN=notreal \
+            -e LABELS=linux,x64 \
+            -e REPO_URL=https://github.com/octokode/test1 \
+            -e RUNNER_NAME=sustainjane-runner-1 \
+            -e RUNNER_SCOPE=repo \
+            -e RUNNER_WORKDIR=/tmp/runner/work \
+            -e DISABLE_AUTOMATIC_DEREGISTRATION=false \
+            -e CONFIGURED_ACTIONS_RUNNER_FILES_DIR=/runner/data \
+            "${FINAL_TAG}" 10
+          # base assertions still hold on the final image
+          GOSS_VARS=goss_vars.yaml GOSS_FILE=goss_base.yaml GOSS_SLEEP=1 dgoss run --entrypoint /usr/bin/sleep \
+            -e RUNNER_NAME=test -e DEBUG_ONLY=true "${FINAL_TAG}" 10
+          # entrypoint with defaults only
+          GOSS_VARS=goss_vars.yaml GOSS_FILE=goss_full_defaults.yaml GOSS_SLEEP=1 dgoss run --entrypoint /usr/bin/sleep \
+            -e RUNNER_NAME=test -e DEBUG_ONLY=true "${FINAL_TAG}" 10
+          # entrypoint with all the config env vars set
+          GOSS_VARS=goss_vars.yaml GOSS_FILE=goss_full.yaml GOSS_SLEEP=1 dgoss run --entrypoint /usr/bin/sleep \
+            -e DEBUG_ONLY=true \
+            -e RUNNER_NAME=huzzah \
+            -e REPO_URL=https://github.com/myoung34/docker-github-actions-runner \
+            -e RUN_AS_ROOT=true \
+            -e RUNNER_NAME_PREFIX=asdf \
+            -e ACCESS_TOKEN=1234 \
+            -e APP_ID=5678 \
+            -e APP_PRIVATE_KEY=2345 \
+            -e APP_LOGIN=SOMETHING \
+            -e RUNNER_SCOPE=org \
+            -e ORG_NAME=myoung34 \
+            -e ENTERPRISE_NAME=emyoung34 \
+            -e LABELS=blue,green \
+            -e RUNNER_TOKEN=3456 \
+            -e RUNNER_WORKDIR=/tmp/a \
+            -e RUNNER_GROUP=wat \
+            -e GITHUB_HOST=github.example.com \
+            -e DISABLE_AUTOMATIC_DEREGISTRATION=true \
+            -e EPHEMERAL=true \
+            -e DISABLE_AUTO_UPDATE=true \
+            "${FINAL_TAG}" 10
+
+      # 3. Push only after every test above has passed. Skipped on pull_request.
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push base + final to GHCR
+        if: github.event_name != 'pull_request'
+        run: |
+          docker tag "${BASE_TAG}" "${IMAGE}:base"
+          docker tag "${FINAL_TAG}" "${IMAGE}:latest"
+          docker push "${IMAGE}:base"
+          docker push "${IMAGE}:latest"

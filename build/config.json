@@ -28,6 +28,14 @@
       ]
     },
     {
+      "category": "skiasharp-native",
+      "source": "apt",
+      "packages": [
+        "libfontconfig1",
+        "libfreetype6"
+      ]
+    },
+    {
       "category": "container-tools",
       "source": "script",
       "packages": [
