@@ -118,6 +118,20 @@
       "packages": [
         "yq"
       ]
+    },
+    {
+      "category": "java",
+      "source": "script",
+      "packages": [
+        "temurin"
+      ]
+    },
+    {
+      "category": "android",
+      "source": "script",
+      "packages": [
+        "android-sdk"
+      ]
     }
   ]
 }
