@@ -9,3 +9,11 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 COPY --chmod=700 build/ /tmp/build/
 RUN /tmp/build/install_base.sh
+
+# Java + Android SDK are baked by build/tools.sh (x86_64 only) so Capacitor
+# Android release builds need no per-run JDK/SDK download. On arm64 these dirs
+# don't exist and the vars are harmless no-ops (no Android build runs there).
+ENV JAVA_HOME=/opt/java \
+    ANDROID_HOME=/opt/android-sdk \
+    ANDROID_SDK_ROOT=/opt/android-sdk
+ENV PATH=${JAVA_HOME}/bin:${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools:${PATH}

@@ -110,6 +110,57 @@ function install_powershell() {
   ln -s /opt/powershell/pwsh /usr/bin/pwsh
 }
 
+function install_temurin() {
+  # Eclipse Temurin JDK 21 — required by the Android Gradle builds and by the
+  # sdkmanager used to bake the SDK below. The Adoptium "latest GA" API URL
+  # always resolves to the newest 21.x, so no version pin to bump here.
+  local DPKG_ARCH ADOPT_ARCH
+  DPKG_ARCH="$(dpkg --print-architecture)"
+  case "$DPKG_ARCH" in
+    amd64) ADOPT_ARCH="x64" ;;
+    arm64) ADOPT_ARCH="aarch64" ;;
+    *) echo "install_temurin: skipping unsupported arch ${DPKG_ARCH}"; return 0 ;;
+  esac
+  curl -fsSL "https://api.adoptium.net/v3/binary/latest/21/ga/linux/${ADOPT_ARCH}/jdk/hotspot/normal/eclipse" -o /tmp/temurin.tar.gz
+  mkdir -p /opt/java
+  tar -xzf /tmp/temurin.tar.gz -C /opt/java --strip-components=1
+  rm -f /tmp/temurin.tar.gz
+  chmod -R a+rX /opt/java
+}
+
+function install_android-sdk() {
+  # Android SDK matching the SeTaFo Capacitor release builds: platform-tools,
+  # platforms;android-35, build-tools;35.0.0 (compileSdk/targetSdk 35, AGP 8.7.2).
+  # x86_64 only — Google ships the SDK command-line tools for linux-x86_64; the
+  # arm64 image variant skips it (the SeTaFo build pool is x86_64).
+  local DPKG_ARCH
+  DPKG_ARCH="$(dpkg --print-architecture)"
+  if [[ "$DPKG_ARCH" != "amd64" ]]; then
+    echo "install_android-sdk: skipping on ${DPKG_ARCH} (SDK is linux-x86_64 only)"
+    return 0
+  fi
+  # cmdline-tools build number (the installer). Bump alongside major SDK upgrades.
+  local CMDLINE_TOOLS_BUILD="11076708"
+  local ANDROID_HOME="/opt/android-sdk"
+  # sdkmanager is a Java program; point it at the JDK install_temurin just laid down.
+  export JAVA_HOME="/opt/java"
+  export PATH="${JAVA_HOME}/bin:${PATH}"
+  mkdir -p "${ANDROID_HOME}/cmdline-tools"
+  curl -fsSL "https://dl.google.com/android/repository/commandlinetools-linux-${CMDLINE_TOOLS_BUILD}_latest.zip" -o /tmp/cmdline-tools.zip
+  unzip -q /tmp/cmdline-tools.zip -d "${ANDROID_HOME}/cmdline-tools"
+  mv "${ANDROID_HOME}/cmdline-tools/cmdline-tools" "${ANDROID_HOME}/cmdline-tools/latest"
+  rm -f /tmp/cmdline-tools.zip
+  local SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+  # Accept licenses. printf (not `yes |`) keeps this pipefail-safe — `yes` would
+  # be SIGPIPE-killed when sdkmanager stops reading and fail the pipeline.
+  printf 'y\n%.0s' {1..50} | "$SDKMANAGER" --sdk_root="${ANDROID_HOME}" --licenses > /dev/null
+  "$SDKMANAGER" --sdk_root="${ANDROID_HOME}" \
+    "platform-tools" "platforms;android-35" "build-tools;35.0.0" > /dev/null
+  # World-readable: jobs run as the unprivileged `runner` user (created later in
+  # install_base.sh) and only read the SDK at build time.
+  chmod -R a+rX "${ANDROID_HOME}"
+}
+
 function install_tools() {
   local function_name
   # shellcheck source=/dev/null
