@@ -34,6 +34,26 @@ function configure_docker() {
     | tee /etc/apt/sources.list.d/docker.list > /dev/null
 }
 
+function configure_nodejs() {
+  # Ubuntu's default `nodejs` apt package is ancient (noble ships 18.x), which
+  # is too old for modern npm/pnpm bootstraps — e.g. `pnpm/action-setup` runs
+  # its self-installer with the runner's default `node`, and npm 11 refuses to
+  # run on Node < 20.17 / < 22.9. Pull Node 24 from NodeSource instead (matches
+  # the app's node:24 toolchain and the workflows' `setup-node` node-version).
+  local NODE_MAJOR=24
+
+  mkdir -p /etc/apt/keyrings
+  curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+    | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+  echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_${NODE_MAJOR}.x nodistro main" \
+    | tee /etc/apt/sources.list.d/nodesource.list > /dev/null
+
+  # Ensure the NodeSource package wins over Ubuntu's `nodejs` regardless of
+  # version-string ordering across releases.
+  printf 'Package: nodejs\nPin: origin deb.nodesource.com\nPin-Priority: 600\n' \
+    | tee /etc/apt/preferences.d/nodesource > /dev/null
+}
+
 function configure_container_tools() {
   # shellcheck source=/dev/null
   source /etc/os-release
@@ -50,11 +70,14 @@ function configure_container_tools() {
 function configure_sources() {
   configure_git
   configure_docker
+  configure_nodejs
   configure_container_tools
 }
 
 function remove_sources() {
   rm -f /etc/apt/sources.list.d/git-core.list
   rm -f /etc/apt/sources.list.d/docker.list
+  rm -f /etc/apt/sources.list.d/nodesource.list
+  rm -f /etc/apt/preferences.d/nodesource
   rm -f /etc/apt/sources.list.d/devel:kubic:libcontainers:stable.list
 }

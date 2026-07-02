@@ -47,7 +47,11 @@ package:
 file:
   /usr/bin/gh:
     exists: true
-  /usr/bin/nodejs:
+  # NodeSource ships `node`/`npm` under /usr/bin (Ubuntu's package used
+  # /usr/bin/nodejs). See build/sources.sh:configure_nodejs.
+  /usr/bin/node:
+    exists: true
+  /usr/bin/npm:
     exists: true
   /usr/sbin/gosu:
     exists: true
@@ -104,3 +108,10 @@ group:
     docker:
         exists: true
         gid: 500
+command:
+    # Guards the NodeSource pin in build/sources.sh — the runner's default node
+    # must stay modern (npm 11 needs >= 20.17 / 22.9; Ubuntu noble's default is 18).
+    node --version:
+        exit-status: 0
+        stdout:
+            - /^v24\./
