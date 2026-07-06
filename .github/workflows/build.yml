@@ -26,10 +26,7 @@ on:
       - "*.sh"
       - goss*
       - .github/workflows/build.yml
-  schedule:
-    # Weekly: pick up new actions/runner releases and ubuntu security updates.
-    - cron: "0 6 * * 1"
-
+      
 permissions:
   contents: read
   packages: write
