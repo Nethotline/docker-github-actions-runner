@@ -132,6 +132,13 @@
       "packages": [
         "android-sdk"
       ]
+    },
+    {
+      "category": "playwright",
+      "source": "script",
+      "packages": [
+        "playwright-deps"
+      ]
     }
   ]
 }
