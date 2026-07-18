@@ -161,6 +161,57 @@ function install_android-sdk() {
   chmod -R a+rX "${ANDROID_HOME}"
 }
 
+function install_playwright-deps() {
+  # System libraries Chromium needs to launch, baked in so the
+  # `[self-hosted, e2e]` runner can run `npx playwright install chromium`
+  # (without `--with-deps`) and have the host deps already present — see
+  # SeTaFo1 #1259 / #944. This mirrors what `playwright install-deps chromium`
+  # lays down on Ubuntu 24.04. Source of truth for the set:
+  # microsoft/playwright packages/playwright-core/src/server/registry/nativeDeps.ts
+  # (the ubuntu24.04 `tools` fonts + `chromium` libs).
+  #
+  # xvfb and the legacy core-X bitmap font packages (xfonts-*) are intentionally
+  # omitted: Playwright drives Chromium headless in CI, which renders through
+  # fontconfig/FreeType and never consults the X core font path or needs an X
+  # server. (Dropping xfonts-cyrillic also keeps the Debian matrix building — it
+  # is Ubuntu-only.) WebKit deps are omitted too — the mobile specs are pinned to
+  # Chromium (see #1259). libfontconfig1/libfreetype6 already come from the
+  # skiasharp-native apt category.
+  local packages=(
+    # Chromium runtime libs whose package names are stable across releases.
+    libcairo2 libdbus-1-3 libdrm2 libgbm1 libnspr4 libnss3 libpango-1.0-0
+    libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 libxfixes3
+    libxkbcommon0 libxrandr2
+    # Fontconfig-registered fonts for correct text/emoji rendering in the
+    # browser (all present on both Ubuntu and Debian).
+    fonts-liberation fonts-noto-color-emoji fonts-unifont fonts-ipafont-gothic
+    fonts-wqy-zenhei fonts-tlwg-loma-otf fonts-freefont-ttf
+  )
+
+  # Ubuntu 24.04's 64-bit time_t transition renamed these libraries with a `t64`
+  # suffix; noble/trixie ship the new name, focal/jammy/bookworm the legacy one.
+  # Probe the apt cache for each — the same approach install_liblttng-ust uses —
+  # so this stays correct across every OS in the build matrix.
+  local base pkg show
+  for base in libasound2 libatk-bridge2.0-0 libatk1.0-0 libatspi2.0-0 libcups2 libglib2.0-0; do
+    for pkg in "${base}t64" "${base}"; do
+      # Capture apt-cache output first, then grep it — do NOT pipe apt-cache
+      # straight into `grep -q`. grep -q closes the pipe on its first match and,
+      # because tools.sh runs under `set -o pipefail`, the SIGPIPE that kills
+      # apt-cache (these libs emit multiple records) would surface as the
+      # pipeline's exit status and make the test spuriously fail. Same reason
+      # install_liblttng-ust captures into a subshell before comparing.
+      show="$(apt-cache show "${pkg}" 2>/dev/null || true)"
+      if grep -q "^Package: ${pkg}\$" <<<"${show}"; then
+        packages+=("${pkg}")
+        break
+      fi
+    done
+  done
+
+  apt-get install -y --no-install-recommends "${packages[@]}"
+}
+
 function install_tools() {
   local function_name
   # shellcheck source=/dev/null

@@ -44,6 +44,25 @@ package:
     podman:
         installed: true
     {{ end }}
+    # Playwright/Chromium system deps baked for the [self-hosted, e2e] runner
+    # (SeTaFo1 #1259). These names are stable across every release in the matrix.
+    libnss3:
+        installed: true
+    libgbm1:
+        installed: true
+    libxkbcommon0:
+        installed: true
+    fonts-liberation:
+        installed: true
+    # A t64-renamed lib proves the OS-aware probe in build/tools.sh picked the
+    # right name: noble/trixie ship `t64`, older releases keep the legacy name.
+    {{ if or (eq .Vars.oscodename "noble") (eq .Vars.oscodename "trixie") }}
+    libasound2t64:
+        installed: true
+    {{ else }}
+    libasound2:
+        installed: true
+    {{ end }}
 file:
   /usr/bin/gh:
     exists: true
