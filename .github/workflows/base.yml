@@ -34,9 +34,16 @@ jobs:
       - name: Copy Dockerfile
         run: cp Dockerfile.base Dockerfile.base.ubuntu-${{ matrix.release }}; sed -i.bak 's/FROM.*/FROM ubuntu:${{ matrix.release }}/' Dockerfile.base.ubuntu-${{ matrix.release }}
       - name: Install Goss and dgoss
+        env:
+          GOSS_VERSION: v0.4.9
         run: |
-          curl -fsSL https://goss.rocks/install | sh
-          export PATH=$PATH:/usr/local/bin
+          # Pull the pinned goss/dgoss release assets directly. `goss.rocks/install`
+          # builds a goss_<ver>_linux_x86_64.tar.gz URL that no longer exists for
+          # current releases (404 -> "not in gzip format"), which broke this step.
+          sudo curl -fsSL "https://github.com/goss-org/goss/releases/download/${GOSS_VERSION}/goss-linux-amd64" -o /usr/local/bin/goss
+          sudo curl -fsSL "https://github.com/goss-org/goss/releases/download/${GOSS_VERSION}/dgoss" -o /usr/local/bin/dgoss
+          sudo chmod +rx /usr/local/bin/goss /usr/local/bin/dgoss
+          goss --version
       - name: Get current Git SHA
         id: vars
         run: echo "GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
@@ -98,9 +105,16 @@ jobs:
       - name: Copy Dockerfile
         run: cp Dockerfile.base Dockerfile.base.debian-${{ matrix.release }}; sed -i.bak 's/FROM.*/FROM debian:${{ matrix.release }}/' Dockerfile.base.debian-${{ matrix.release }}
       - name: Install Goss and dgoss
+        env:
+          GOSS_VERSION: v0.4.9
         run: |
-          curl -fsSL https://goss.rocks/install | sh
-          export PATH=$PATH:/usr/local/bin
+          # Pull the pinned goss/dgoss release assets directly. `goss.rocks/install`
+          # builds a goss_<ver>_linux_x86_64.tar.gz URL that no longer exists for
+          # current releases (404 -> "not in gzip format"), which broke this step.
+          sudo curl -fsSL "https://github.com/goss-org/goss/releases/download/${GOSS_VERSION}/goss-linux-amd64" -o /usr/local/bin/goss
+          sudo curl -fsSL "https://github.com/goss-org/goss/releases/download/${GOSS_VERSION}/dgoss" -o /usr/local/bin/dgoss
+          sudo chmod +rx /usr/local/bin/goss /usr/local/bin/dgoss
+          goss --version
       - name: Get current Git SHA
         id: vars
         run: echo "GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
