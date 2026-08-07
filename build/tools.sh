@@ -129,18 +129,29 @@ function install_temurin() {
 }
 
 function install_android-sdk() {
-  # Android SDK matching the SeTaFo Capacitor release builds: platform-tools,
-  # platforms;android-35, build-tools;35.0.0 (compileSdk/targetSdk 35, AGP 8.7.2).
+  # Android SDK matching the Capacitor release builds on this pool: platform-tools,
+  # platforms;android-36, build-tools;36.0.0 (compileSdk/targetSdk 36, AGP 8.13.0).
+  # Serves BOTH SeTaFo (client + manage) and breezl; both are on 36 — breezl has
+  # been since 2026-06-17, SeTaFo moved for Google Play's 2026-08-31 targetSdk
+  # gate. android-35 is deliberately NOT installed any more: nothing on the pool
+  # builds against it, and keeping it would mask an accidental regression to 35.
+  #
+  # This bake is load-bearing, not a cache warm-up: ${ANDROID_HOME} is chmod'd
+  # a+rX below (read-only for the unprivileged `runner` user), so Gradle CANNOT
+  # auto-download a platform that is missing here. A build needing an SDK level
+  # absent from this list fails rather than silently fetching it.
+  #
   # x86_64 only — Google ships the SDK command-line tools for linux-x86_64; the
-  # arm64 image variant skips it (the SeTaFo build pool is x86_64).
+  # arm64 image variant skips it (the build pool is x86_64).
   local DPKG_ARCH
   DPKG_ARCH="$(dpkg --print-architecture)"
   if [[ "$DPKG_ARCH" != "amd64" ]]; then
     echo "install_android-sdk: skipping on ${DPKG_ARCH} (SDK is linux-x86_64 only)"
     return 0
   fi
-  # cmdline-tools build number (the installer). Bump alongside major SDK upgrades.
-  local CMDLINE_TOOLS_BUILD="11076708"
+  # cmdline-tools build number (the installer). Bump alongside major SDK upgrades:
+  # an old sdkmanager can choke on newer repository-manifest schema revisions.
+  local CMDLINE_TOOLS_BUILD="13114758"
   local ANDROID_HOME="/opt/android-sdk"
   # sdkmanager is a Java program; point it at the JDK install_temurin just laid down.
   export JAVA_HOME="/opt/java"
@@ -155,7 +166,7 @@ function install_android-sdk() {
   # be SIGPIPE-killed when sdkmanager stops reading and fail the pipeline.
   printf 'y\n%.0s' {1..50} | "$SDKMANAGER" --sdk_root="${ANDROID_HOME}" --licenses > /dev/null
   "$SDKMANAGER" --sdk_root="${ANDROID_HOME}" \
-    "platform-tools" "platforms;android-35" "build-tools;35.0.0" > /dev/null
+    "platform-tools" "platforms;android-36" "build-tools;36.0.0" > /dev/null
   # World-readable: jobs run as the unprivileged `runner` user (created later in
   # install_base.sh) and only read the SDK at build time.
   chmod -R a+rX "${ANDROID_HOME}"

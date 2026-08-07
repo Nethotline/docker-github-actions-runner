@@ -98,16 +98,19 @@ file:
     filetype: file
     contents:
       - '/^en_US.UTF-8 UTF-8/'
-  # Temurin JDK 21 + Android SDK (platform-tools, android-35, build-tools 35.0.0)
+  # Temurin JDK 21 + Android SDK (platform-tools, android-36, build-tools 36.0.0)
   # are baked for x86_64 only — the linux SDK binaries are x86_64.
+  # Keep these paths in lockstep with install_android-sdk() in build/tools.sh:
+  # the runner user cannot write /opt/android-sdk, so a platform missing from the
+  # image is a hard build failure downstream, not a slow first build.
   {{ if eq .Vars.arch "x86_64" }}
   /opt/java/bin/java:
     exists: true
   /opt/android-sdk/platform-tools/adb:
     exists: true
-  /opt/android-sdk/platforms/android-35/android.jar:
+  /opt/android-sdk/platforms/android-36/android.jar:
     exists: true
-  /opt/android-sdk/build-tools/35.0.0/aapt2:
+  /opt/android-sdk/build-tools/36.0.0/aapt2:
     exists: true
   {{ end }}
 
