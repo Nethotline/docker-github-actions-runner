@@ -5,6 +5,11 @@ on:
       - Dockerfile.base
       - .github/workflows/base.yml
       - goss*
+      # Dockerfile.base does `COPY build/ /tmp/build/` and runs install_base.sh,
+      # so everything the base image contains (JDK, Android SDK, Playwright deps
+      # — see build/tools.sh) comes from here. Without this the image silently
+      # keeps serving stale tooling after a tools.sh-only change.
+      - build/**
     branches:
       - master
       - develop
