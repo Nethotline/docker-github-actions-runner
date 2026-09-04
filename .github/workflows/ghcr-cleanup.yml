@@ -1,0 +1,66 @@
+name: GHCR cleanup
+
+# Prunes old image versions of ghcr.io/nethotline/docker-github-actions-runner.
+#
+# WHY THIS EXISTS: a 2026-09-04 audit found this single package holding
+# 9.61 GB — the second-largest consumer of the account's 56.9 GB of GHCR
+# storage — across just 16 versions (~600 MB each). Only TWO of those 16 carry
+# a tag (`latest` and `base`); the other 14 are dangling untagged manifests
+# left behind when those two tags were overwritten by later builds. So
+# `delete-untagged` alone reclaims ~8.2 GB (85%) here without touching a single
+# tagged image.
+#
+# The package is also invisible to the GitHub "list packages for an
+# organization" API — it does not appear in that listing even though it exists
+# and is readable directly by name. Any cleanup job that discovers packages by
+# wildcard would silently skip it, which is why every workflow in this fleet
+# enumerates package names explicitly instead.
+#
+# SAFETY: htz-metal-1 runs this image as `:latest`, and `base` is the shared
+# lower layer the tagged build is derived from. Both are pinned in
+# `exclude-tags` so a prune can never delete the image the CI pool is running.
+#
+# Uses dataaxiom/ghcr-cleanup-action because it resolves multi-arch and
+# build-attestation child manifests; `validate: true` re-checks integrity after
+# the run.
+
+on:
+  schedule:
+    - cron: '17 4 * * 4'         # Thursdays 04:17 UTC (staggered off the other cleanup jobs)
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Preview only — list what would be deleted, delete nothing'
+        type: boolean
+        default: true
+      keep_tagged:
+        description: 'Keep this many most-recent tagged versions'
+        type: string
+        default: '8'
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ghcr-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    name: Prune old GHCR versions
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prune
+        # v1.2.2 — SHA-pinned (repo policy). Bump the comment + SHA together.
+        uses: dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          owner: nethotline
+          packages: docker-github-actions-runner
+          delete-untagged: true
+          # The running CI image and its base layer are never candidates.
+          exclude-tags: latest,base
+          keep-n-tagged: ${{ inputs.keep_tagged || '8' }}
+          validate: true
+          dry-run: ${{ github.event_name == 'schedule' && 'false' || inputs.dry_run }}
